@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student Login - SISTec AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        /* Background color matching home.html and admin login theme */
+        background-color: #f3f4f6;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <!-- TOP BAR (Matching theme) -->
+    <div
+      class="topbar bg-blue-900 text-white p-4 text-xl font-semibold shadow-md"
+    >
+      🤖 SISTec AI College Assistant
+    </div>
+
+    <!-- Login Container -->
+    <div class="login-container flex justify-center items-center flex-grow p-4">
+      <div
+        class="login-card w-full max-w-sm p-8 bg-white rounded-xl shadow-2xl border border-gray-100"
+      >
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-2">
+          Student Portal Login
+        </h2>
+        <p class="text-sm text-center text-gray-500 mb-6">
+          Log in to access your chat history.
+        </p>
+
+        <!-- Error Message Display -->
+        {% if error %}
+        <div
+          class="bg-red-100 text-red-700 border border-red-400 p-3 rounded-lg mb-4 text-sm font-medium text-left"
+        >
+          {{ error }}
+        </div>
+        {% endif %}
+
+        <form
+          method="POST"
+          action="{{ url_for('student_login_page') }}"
+          class="space-y-4"
+        >
+          <!-- FIX: Changed 'login_page' to 'student_login_page' -->
+          <input
+            type="email"
+            name="email"
+            placeholder="Student Email Address"
+            required
+            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+          />
+
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            required
+            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+          />
+
+          <button
+            type="submit"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 shadow-lg"
+          >
+            Login to Chat
+          </button>
+        </form>
+
+        <div class="registration-link mt-5 text-center text-gray-600">
+          Not registered yet?
+          <a
+            href="{{ url_for('register') }}"
+            class="text-blue-600 hover:text-blue-800 font-bold transition duration-150"
+            >Register Now</a
+          >
+          <span class="mx-2">|</span>
+          <a
+            href="{{ url_for('home') }}"
+            class="text-gray-500 hover:text-gray-700 font-bold transition duration-150"
+            >Back to Home</a
+          >
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

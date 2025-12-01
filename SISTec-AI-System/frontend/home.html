@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SISTec AI System - Home</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f3f4f6;
+      }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- TOP BAR -->
+    <div
+      class="topbar bg-blue-900 text-white p-4 text-xl font-semibold shadow-md"
+    >
+      🤖 SISTec AI College Assistant
+    </div>
+
+    <!-- Main Area - Responsive Grid Layout -->
+    <div
+      class="main-container flex-grow p-8 flex flex-col md:flex-row items-center justify-center gap-8"
+    >
+      <!-- Student Card -->
+      <div
+        class="card student w-full max-w-sm p-8 bg-white rounded-xl shadow-2xl border border-blue-100 transform hover:scale-105 transition duration-300"
+      >
+        <h1
+          class="text-4xl font-extrabold text-blue-600 mb-4 flex items-center"
+        >
+          <span class="mr-3">👨‍🎓</span> Student
+        </h1>
+        <p class="text-gray-600 mb-6">
+          Register yourself to use the AI system or login to chat.
+        </p>
+
+        <!-- Link to Registration page -->
+        <a href="{{ url_for('register') }}">
+          <button
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 shadow-lg"
+          >
+            Student Registration / Login
+          </button>
+        </a>
+      </div>
+
+      <!-- Admin Card -->
+      <div
+        class="card admin w-full max-w-sm p-8 bg-white rounded-xl shadow-2xl border border-gray-100 transform hover:scale-105 transition duration-300"
+      >
+        <h1
+          class="text-4xl font-extrabold text-gray-700 mb-4 flex items-center"
+        >
+          <span class="mr-3">🛡️</span> Admin
+        </h1>
+        <p class="text-gray-600 mb-6">
+          Login to manage system and respond to pending student queries.
+        </p>
+
+        <!-- Link to dedicated Admin Login page -->
+        <a href="{{ url_for('admin_login_page') }}">
+          <button
+            class="w-full bg-gray-700 hover:bg-gray-800 text-white font-bold py-3 rounded-lg transition duration-200 shadow-lg"
+          >
+            Admin Portal
+          </button>
+        </a>
+      </div>
+    </div>
+</body>
+</html>

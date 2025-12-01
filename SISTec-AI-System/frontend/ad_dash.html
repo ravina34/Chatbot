@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard - Pending Queries</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap");
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #e5e7eb; /* Light gray background */
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <!-- Navigation Bar -->
+    <nav class="bg-blue-800 shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+          <div class="flex-shrink-0 text-white font-bold text-xl">
+            SISTec Admin Panel
+          </div>
+          <div class="flex">
+            <a
+              href="{{ url_for('logout') }}"
+              class="text-white hover:bg-blue-700 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-in-out"
+            >
+              Logout
+            </a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8">
+      <h1
+        class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-2 border-blue-500"
+      >
+        Pending Student Queries
+      </h1>
+
+      <!-- Queries List -->
+      {% if queries %}
+      <div class="space-y-6">
+        {% for query in queries %}
+        <div
+          class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 hover:shadow-xl transition duration-300"
+        >
+          <div class="mb-4 pb-3 border-b border-gray-100">
+            <!-- Query ID and Student Name -->
+            <p class="text-sm font-semibold text-blue-600">
+              Query #{{ query[0] }} from:
+              <span class="text-gray-700 font-bold ml-1">{{ query[2] }}</span>
+            </p>
+          </div>
+
+          <!-- Student's Question -->
+          <div class="bg-blue-50 p-4 rounded-lg mb-4">
+            <h3 class="text-lg font-medium text-gray-800 mb-2">
+              Student Question:
+            </h3>
+            <p class="text-gray-600 italic">{{ query[1] }}</p>
+          </div>
+
+          <!-- Response Form -->
+          <form
+            method="POST"
+            action="{{ url_for('admin') }}"
+            class="mt-4 space-y-4"
+          >
+            <!-- Hidden Query ID -->
+            <input type="hidden" name="query_id" value="{{ query[0] }}" />
+
+            <!-- Response Textarea -->
+            <div>
+              <label
+                for="response_text_{{ query[0] }}"
+                class="block text-sm font-medium text-gray-700"
+              >
+                Your Response:
+              </label>
+              <textarea
+                id="response_text_{{ query[0] }}"
+                name="response_text"
+                rows="4"
+                required
+                class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                placeholder="Type your detailed answer here..."
+              ></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              type="submit"
+              class="w-full sm:w-auto flex items-center justify-center py-2 px-6 border border-transparent rounded-lg shadow-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
+            >
+              Submit Answer
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="bg-white p-10 rounded-xl shadow-lg text-center">
+        <p class="text-2xl font-semibold text-gray-600 mb-3">
+          No Pending Queries!
+        </p>
+        <p class="text-gray-500">
+          All student questions have been answered. Check back later.
+        </p>
+      </div>
+      {% endif %}
+    </main>
+  </body>
+</html>
