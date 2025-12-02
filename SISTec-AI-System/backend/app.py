@@ -15,8 +15,9 @@ app.secret_key = 'super_secret_key_for_sistec_ai'
 
 # Database Connection function
 def get_db_connection():
-    db_url = os.getenv("postgresql://chatbot_dxnt_user:xc21G9xr6mb9mascmAtyiEIWmFx208Qr@dpg-d4mslsbe5dus738ki4ug-a/chatbot_dxnt")
+    db_url = os.getenv("DATABASE_URL")
     return psycopg2.connect(db_url)
+
 
 
 # --- Main Landing Page ---
@@ -352,4 +353,5 @@ def success_page():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
