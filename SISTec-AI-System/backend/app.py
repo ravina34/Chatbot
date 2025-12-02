@@ -15,14 +15,9 @@ app.secret_key = 'super_secret_key_for_sistec_ai'
 
 # Database Connection function
 def get_db_connection():
-    # PostgreSQL database se connect karta hai aur connection object return karta hai.
-    # NOTE: Please ensure your database settings (host, dbname, user, password) are correct.
-    return psycopg2.connect(
-        host="localhost",
-        database="Chatbot",
-        user="postgres",
-        password="root"
-    )
+    db_url = os.getenv("postgresql://chatbot_dxnt_user:xc21G9xr6mb9mascmAtyiEIWmFx208Qr@dpg-d4mslsbe5dus738ki4ug-a/chatbot_dxnt")
+    return psycopg2.connect(db_url)
+
 
 # --- Main Landing Page ---
 @app.route("/")
@@ -357,3 +352,4 @@ def success_page():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
