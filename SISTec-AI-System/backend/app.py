@@ -6,7 +6,7 @@ import psycopg2.extras # For RealDictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import timedelta
-from agents.query_system import get_ai_response # AI query system import
+from agents.admission_agent import get_ai_response # AI query system import
 
 # ===============================================
 # 1. APP SETUP AND CONFIGURATION
@@ -474,3 +474,4 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
