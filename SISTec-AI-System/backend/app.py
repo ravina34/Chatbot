@@ -142,7 +142,7 @@ def admin_required(f):
     """Decorator to check if user is logged in as admin."""
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'admin':
-            return redirect(url_for('admin_login'))
+            return redirect(url_for('admin_login_page'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
     return decorated_function
@@ -490,6 +490,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
