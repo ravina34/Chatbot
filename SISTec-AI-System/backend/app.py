@@ -229,10 +229,9 @@ def student_login():
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
                 """
-               SELECT user_id, full_name, COALESCE(password_hash, password) AS pwd
-FROM users
-WHERE email = %s;
-
+                SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
+                FROM users
+                WHERE email = %s AND user_role = 'student';
                 """,
                 (email,)
             )
@@ -279,7 +278,7 @@ def admin_login_page():
                 """
                 SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
                 FROM users
-                WHERE email = %s;
+                WHERE email = %s AND user_role = 'admin';
                 """,
                 (email,)
             )
@@ -518,5 +517,3 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
-
-
