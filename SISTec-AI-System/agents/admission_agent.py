@@ -40,7 +40,8 @@ def get_ai_response(query_text: str) -> str:
         # Enable Google Search grounding for real-time, accurate information
         "tools": [{"google_search": {}}],
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "config": {
+        # CRITICAL FIX: Changed 'config' to 'generationConfig' to resolve the 400 Bad Request error.
+        "generationConfig": {
             "maxOutputTokens": 1024,
             "temperature": 0.2
         }
@@ -92,10 +93,3 @@ def get_ai_response(query_text: str) -> str:
             return "Sorry, an internal error occurred while fetching the AI response."
 
     return "Sorry, I am currently unable to fetch an answer for this query."
-
-# Example usage (for testing purposes, not run in Flask)
-# if __name__ == '__main__':
-#     test_query = "When are the admissions for CSE starting this year?"
-#     print(f"Query: {test_query}")
-#     response = get_ai_response(test_query)
-#     print(f"Response: {response}")
