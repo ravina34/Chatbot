@@ -239,7 +239,7 @@ def student_login():
 
 # --- Admin Login ---
 @app.route('/admin_login', methods=['GET', 'POST'])
-def admin_login():
+def admin_login_page():
     """Handles admin login (ad_login.html)."""
     if request.method == 'POST':
         conn = get_db_connection()
@@ -490,6 +490,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
