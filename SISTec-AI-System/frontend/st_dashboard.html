@@ -3,143 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI College Enquiry Chatbot</title>
+    <title>Student Dashboard - SIStec Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            font-family: 'Arial', sans-serif;
-            background-color: #f4f7f9;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-        .chat-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 800px;
-            display: flex;
-            flex-direction: column;
-            min-height: 85vh;
-        }
-        .header {
-            padding: 15px 20px;
-            background-color: #0056b3; /* A professional blue */
-            color: white;
-            border-top-left-radius: 12px;
-            border-top-right-radius: 12px;
-            font-size: 1.5em;
-            font-weight: bold;
-            text-align: center;
-        }
-        .chat-history {
-            flex-grow: 1;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column-reverse; /* Show latest messages at the bottom */
-        }
-        .message-box {
-            margin-bottom: 15px;
-            max-width: 90%;
-            padding: 10px 15px;
-            border-radius: 18px;
-            line-height: 1.6;
-            word-wrap: break-word;
-        }
-        .user-message {
-            background-color: #e1ffc7; /* Light green for user */
-            align-self: flex-end;
-            margin-left: auto;
-            border-bottom-right-radius: 5px;
-        }
-        .ai-message {
-            background-color: #ffffff; /* White with subtle border for AI */
-            border: 1px solid #ddd;
-            align-self: flex-start;
-            margin-right: auto;
-            border-bottom-left-radius: 5px;
-        }
-        .message-label {
-            font-weight: bold;
-            margin-bottom: 5px;
-            display: block;
-        }
-        .input-area {
-            padding: 20px;
-            border-top: 1px solid #ddd;
-            display: flex;
-            background-color: #f0f0f0;
-            border-bottom-left-radius: 12px;
-            border-bottom-right-radius: 12px;
-        }
-        .input-area textarea {
-            flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            resize: none;
-            margin-right: 10px;
-            font-size: 1em;
-            height: 40px;
-        }
-        .input-area button {
-            background-color: #0056b3;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: background-color 0.3s ease;
-        }
-        .input-area button:hover {
-            background-color: #004494;
-        }
-        .logout-link {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            color: #0056b3;
-            text-decoration: none;
-            font-weight: bold;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .chat-bubble { max-width: 80%; border-radius: 1rem; padding: 0.75rem 1rem; }
     </style>
 </head>
-<body>
-    <a href="{{ url_for('logout') }}" class="logout-link">Logout</a>
+<body class="flex flex-col h-screen">
+    <header class="bg-indigo-600 text-white p-4 shadow-md flex justify-between items-center">
+        <h1 class="text-xl font-bold">SIStec Chatbot - Welcome, {{ user_name }}</h1>
+        <a href="/logout" class="bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded-lg transition duration-200">Logout</a>
+    </header>
 
-    <div class="chat-container">
-        <div class="header">College Enquiry AI Chatbot</div>
-        
-        <div class="chat-history">
-            <!-- Messages will be rendered here (latest first due to flex-direction: column-reverse) -->
-            {% for item in chat_history %}
-                <div class="message-box ai-message">
-                    <span class="message-label">AI Response:</span>
-                    {{ item.response | safe }}
-                </div>
-                <div class="message-box user-message">
-                    <span class="message-label">You Asked:</span>
-                    {{ item.query }}
-                </div>
-            {% endfor %}
+    <main class="flex-grow p-4 overflow-hidden">
+        <div id="chatWindow" class="bg-white h-full rounded-xl shadow-lg flex flex-col">
+            <!-- Message History Area -->
+            <div id="messageHistory" class="flex-grow overflow-y-auto p-4 space-y-4">
+                <div class="text-center text-gray-500 pt-4">Start chatting to get information about the college!</div>
+            </div>
 
-            <!-- Initial message if history is empty -->
-            {% if not chat_history %}
-                <div class="message-box ai-message" style="margin-top: auto;">
-                    <span class="message-label">AI Chatbot:</span>
-                    Hello! I am your College Enquiry Assistant, powered by Gemini. How can I help you with your college or course questions today?
-                </div>
-            {% endif %}
-
+            <!-- Input Area -->
+            <div class="p-4 border-t border-gray-200 bg-gray-50 flex items-center space-x-3">
+                <input type="text" id="userInput" placeholder="Ask your question here..." 
+                       class="flex-grow form-input px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500">
+                <button id="sendButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-5 rounded-xl shadow-md transition duration-200">
+                    Send
+                </button>
+            </div>
         </div>
+    </main>
 
-        <form method="POST" action="{{ url_for('ai_chat') }}" class="input-area">
-            <textarea name="user_query" placeholder="Ask your college-related question..." required></textarea>
-            <button type="submit">Send</button>
-        </form>
-    </div>
+    <script>
+        const messageHistory = document.getElementById('messageHistory');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+
+        // Function to scroll chat window to the bottom
+        function scrollToBottom() {
+            messageHistory.scrollTop = messageHistory.scrollHeight;
+        }
+
+        // Function to render a message bubble
+        function renderMessage(text, isUser, status = null) {
+            const div = document.createElement('div');
+            div.className = 'flex ' + (isUser ? 'justify-end' : 'justify-start');
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble shadow-md ' + 
+                               (isUser ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-800');
+            
+            // Add status indicator for AI responses or pending queries
+            let footer = '';
+            if (!isUser) {
+                if (status === 'pending') {
+                    footer = '<span class="text-xs text-red-500 block mt-1">Status: Pending Admin Review</span>';
+                } else if (status === 'co') {
+                    footer = '<span class="text-xs text-indigo-500 block mt-1">Status: Checking...</span>';
+                }
+            } else if (status === 'pending') {
+                 // For the user's query that is pending
+                bubble.className = 'chat-bubble shadow-md bg-indigo-500 text-white opacity-70';
+                footer = '<span class="text-xs text-white block mt-1">Status: Pending Response</span>';
+            }
+
+
+            bubble.innerHTML = `<div>${text}</div>${footer}`;
+            div.appendChild(bubble);
+            messageHistory.appendChild(div);
+            scrollToBottom();
+            return bubble; // Return bubble reference for possible updates
+        }
+
+        // Function to send the query
+        async function sendQuery() {
+            const query = userInput.value.trim();
+            if (!query) return;
+
+            // 1. Render User's query
+            renderMessage(query, true);
+            userInput.value = '';
+            sendButton.disabled = true;
+            
+            // 2. Render temporary "AI is typing" message
+            const loadingBubble = renderMessage('Typing...', false, 'co');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+                
+                // 3. Update or remove loading bubble
+                messageHistory.removeChild(loadingBubble.parentElement);
+                
+                if (response.ok) {
+                    renderMessage(data.response, false, data.status);
+                } else {
+                    renderMessage(data.error || 'Server error occurred.', false, 'pending');
+                }
+            } catch (error) {
+                console.error('Chat error:', error);
+                messageHistory.removeChild(loadingBubble.parentElement);
+                renderMessage('Network error. Could not reach the server.', false, 'pending');
+            } finally {
+                sendButton.disabled = false;
+                scrollToBottom();
+            }
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', sendQuery);
+        userInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendQuery();
+            }
+        });
+
+        // Function to load existing chat history
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/chat_history');
+                const history = await response.json();
+
+                // Clear initial placeholder text
+                messageHistory.innerHTML = ''; 
+
+                if (history && history.length > 0) {
+                    history.forEach(item => {
+                        // User's query
+                        renderMessage(item.query_text, true, item.query_status);
+                        
+                        // Bot/Admin response
+                        if (item.response_text) {
+                            renderMessage(item.response_text, false, item.query_status);
+                        }
+                    });
+                } else {
+                     messageHistory.innerHTML = '<div class="text-center text-gray-500 pt-4">Start chatting to get information about the college!</div>';
+                }
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                messageHistory.innerHTML = '<div class="text-center text-red-500 pt-4">Failed to load chat history.</div>';
+            } finally {
+                scrollToBottom();
+            }
+        }
+
+        window.onload = loadHistory;
+    </script>
 </body>
 </html>
