@@ -231,7 +231,7 @@ def student_login():
                 """
                 SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
                 FROM users
-                WHERE email = %s AND user_role = 'student';
+                WHERE email = %s;
                 """,
                 (email,)
             )
@@ -278,7 +278,7 @@ def admin_login_page():
                 """
                 SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
                 FROM users
-                WHERE email = %s AND user_role = 'admin';
+                WHERE email = %s;
                 """,
                 (email,)
             )
@@ -517,3 +517,4 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
