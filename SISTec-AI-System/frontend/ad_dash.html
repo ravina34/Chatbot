@@ -1,118 +1,170 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Pending Queries</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap");
-      body {
-        font-family: "Inter", sans-serif;
-        background-color: #e5e7eb; /* Light gray background */
-      }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     </style>
-  </head>
-  <body class="min-h-screen">
-    <!-- Navigation Bar -->
-    <nav class="bg-blue-800 shadow-lg">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
-          <div class="flex-shrink-0 text-white font-bold text-xl">
-            SISTec Admin Panel
-          </div>
-          <div class="flex">
-            <a
-              href="{{ url_for('logout') }}"
-              class="text-white hover:bg-blue-700 px-3 py-2 rounded-md text-sm font-medium transition duration-150 ease-in-out"
-            >
-              Logout
-            </a>
-          </div>
+</head>
+<body class="min-h-screen flex flex-col">
+    <header class="bg-red-700 text-white p-4 shadow-lg flex justify-between items-center">
+        <h1 class="text-2xl font-bold">Admin Panel - Pending Queries</h1>
+        <div class="flex items-center space-x-4">
+            <span class="text-sm">Welcome, {{ user_name }}</span>
+            <a href="/logout" class="bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded-lg transition duration-200">Logout</a>
         </div>
-      </div>
-    </nav>
+    </header>
 
-    <!-- Main Content Area -->
-    <main class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8">
-      <h1
-        class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-2 border-blue-500"
-      >
-        Pending Student Queries
-      </h1>
+    <main class="p-6 flex-grow">
+        <div class="bg-white rounded-xl shadow-xl p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Queries Requiring Manual Response</h2>
+            
+            <div id="queriesList" class="space-y-4">
+                <!-- Queries will be dynamically loaded here -->
+                <div id="loadingMessage" class="text-center text-gray-500">Loading pending queries...</div>
+            </div>
+            
+            <!-- Modal for answering query -->
+            <div id="answerModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                    <h3 class="text-xl font-bold mb-4">Respond to Query</h3>
+                    <p class="mb-3 text-sm font-medium text-red-600">Student: <span id="studentInfo"></span></p>
+                    <p class="mb-4 bg-gray-100 p-3 rounded-lg border border-gray-200">
+                        <span class="font-semibold">Query:</span> <span id="queryText"></span>
+                    </p>
+                    
+                    <textarea id="adminResponse" rows="5" placeholder="Enter your response here..."
+                              class="form-input w-full p-3 border rounded-lg focus:ring-red-500 focus:border-red-500 mb-4"></textarea>
+                    
+                    <div id="modalMessage" class="text-sm text-center font-medium mb-4"></div>
 
-      <!-- Queries List -->
-      {% if queries %}
-      <div class="space-y-6">
-        {% for query in queries %}
-        <div
-          class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 hover:shadow-xl transition duration-300"
-        >
-          <div class="mb-4 pb-3 border-b border-gray-100">
-            <!-- Query ID and Student Name -->
-            <p class="text-sm font-semibold text-blue-600">
-              Query #{{ query[0] }} from:
-              <span class="text-gray-700 font-bold ml-1">{{ query[2] }}</span>
-            </p>
-          </div>
-
-          <!-- Student's Question -->
-          <div class="bg-blue-50 p-4 rounded-lg mb-4">
-            <h3 class="text-lg font-medium text-gray-800 mb-2">
-              Student Question:
-            </h3>
-            <p class="text-gray-600 italic">{{ query[1] }}</p>
-          </div>
-
-          <!-- Response Form -->
-          <form
-            method="POST"
-            action="{{ url_for('admin') }}"
-            class="mt-4 space-y-4"
-          >
-            <!-- Hidden Query ID -->
-            <input type="hidden" name="query_id" value="{{ query[0] }}" />
-
-            <!-- Response Textarea -->
-            <div>
-              <label
-                for="response_text_{{ query[0] }}"
-                class="block text-sm font-medium text-gray-700"
-              >
-                Your Response:
-              </label>
-              <textarea
-                id="response_text_{{ query[0] }}"
-                name="response_text"
-                rows="4"
-                required
-                class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-                placeholder="Type your detailed answer here..."
-              ></textarea>
+                    <div class="flex justify-end space-x-3">
+                        <button id="closeModalButton" class="py-2 px-4 bg-gray-300 hover:bg-gray-400 rounded-lg font-semibold transition duration-200">
+                            Cancel
+                        </button>
+                        <button id="submitResponseButton" class="py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition duration-200">
+                            Submit Answer
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            <!-- Submit Button -->
-            <button
-              type="submit"
-              class="w-full sm:w-auto flex items-center justify-center py-2 px-6 border border-transparent rounded-lg shadow-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
-            >
-              Submit Answer
-            </button>
-          </form>
         </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="bg-white p-10 rounded-xl shadow-lg text-center">
-        <p class="text-2xl font-semibold text-gray-600 mb-3">
-          No Pending Queries!
-        </p>
-        <p class="text-gray-500">
-          All student questions have been answered. Check back later.
-        </p>
-      </div>
-      {% endif %}
     </main>
-  </body>
+
+    <script>
+        const queriesList = document.getElementById('queriesList');
+        const modal = document.getElementById('answerModal');
+        const closeModalButton = document.getElementById('closeModalButton');
+        const submitResponseButton = document.getElementById('submitResponseButton');
+        const queryTextElement = document.getElementById('queryText');
+        const studentInfoElement = document.getElementById('studentInfo');
+        const adminResponseTextarea = document.getElementById('adminResponse');
+        const modalMessage = document.getElementById('modalMessage');
+        let currentChatId = null;
+
+        closeModalButton.addEventListener('click', () => modal.classList.add('hidden'));
+
+        function displayMessage(text, isError = false) {
+            modalMessage.textContent = text;
+            modalMessage.className = `text-sm text-center font-medium mb-4 ${isError ? 'text-red-600' : 'text-green-600'}`;
+        }
+
+        async function loadPendingQueries() {
+            queriesList.innerHTML = '<div id="loadingMessage" class="text-center text-gray-500">Loading pending queries...</div>';
+            
+            try {
+                const response = await fetch('/api/admin/pending_queries');
+                const queries = await response.json();
+
+                queriesList.innerHTML = '';
+                
+                if (queries.length === 0) {
+                    queriesList.innerHTML = '<div class="text-center text-gray-500 p-8 border border-dashed rounded-lg">No pending queries at this time. Great job!</div>';
+                    return;
+                }
+
+                queries.forEach(query => {
+                    const queryCard = document.createElement('div');
+                    queryCard.className = 'bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm flex justify-between items-start';
+                    queryCard.innerHTML = `
+                        <div>
+                            <p class="text-gray-900 font-semibold">${query.query_text}</p>
+                            <p class="text-sm text-gray-600 mt-1">Student: ${query.student_name} (${query.student_email})</p>
+                            <p class="text-xs text-gray-500">Time: ${new Date(query.query_time).toLocaleString()}</p>
+                        </div>
+                        <button data-id="${query.id}" 
+                                data-query="${query.query_text}" 
+                                data-student="${query.student_name} (${query.student_email})"
+                                class="answer-button bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3 rounded-lg font-semibold transition duration-200">
+                            Answer
+                        </button>
+                    `;
+                    queriesList.appendChild(queryCard);
+                });
+
+                document.querySelectorAll('.answer-button').forEach(button => {
+                    button.addEventListener('click', function() {
+                        currentChatId = this.getAttribute('data-id');
+                        queryTextElement.textContent = this.getAttribute('data-query');
+                        studentInfoElement.textContent = this.getAttribute('data-student');
+                        adminResponseTextarea.value = '';
+                        modalMessage.textContent = '';
+                        modal.classList.remove('hidden');
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading pending queries:', error);
+                queriesList.innerHTML = '<div class="text-center text-red-500">Failed to load queries due to a server error.</div>';
+            }
+        }
+
+        submitResponseButton.addEventListener('click', async function() {
+            const responseText = adminResponseTextarea.value.trim();
+            if (!responseText) {
+                displayMessage('Response cannot be empty.', true);
+                return;
+            }
+            
+            displayMessage('Submitting response...', false);
+            submitResponseButton.disabled = true;
+
+            try {
+                const apiResponse = await fetch('/api/admin/answer_query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        chat_id: currentChatId, 
+                        response: responseText 
+                    })
+                });
+
+                const data = await apiResponse.json();
+
+                if (apiResponse.ok) {
+                    displayMessage(data.message, false);
+                    setTimeout(() => {
+                        modal.classList.add('hidden');
+                        loadPendingQueries(); // Refresh the list
+                    }, 1500);
+                } else {
+                    displayMessage(data.error || 'Failed to submit answer.', true);
+                }
+            } catch (error) {
+                console.error('Submission error:', error);
+                displayMessage('An unexpected network error occurred.', true);
+            } finally {
+                submitResponseButton.disabled = false;
+            }
+        });
+
+        window.onload = loadPendingQueries;
+        // Reload every 30 seconds to check for new pending queries
+        setInterval(loadPendingQueries, 30000); 
+    </script>
+</body>
 </html>
