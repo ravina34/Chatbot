@@ -1,26 +1,35 @@
-import os
 import sys
-
-
+import os
 import json
 import logging
 import psycopg2
-import psycopg2.extras # For RealDictCursor
+import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import timedelta
+
+# ============================
+# FIX: Add BASE DIR for agents/
+# ============================
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# Add project root to import agents folder
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from agents.admission_agent import get_ai_response # AI query system import
+# Now this import will work
+from agents.admission_agent import get_ai_response
 
-# ===============================================
-# 1. APP SETUP AND CONFIGURATION
-# ===============================================
-app = Flask(__name__,
-            template_folder='frontend', # HTML files folder
-            static_folder='frontend/css') # Static assets folder (e.g., CSS/JS)
+
+# ==============================
+# Flask App Configuration
+# ==============================
+
+app = Flask(
+    __name__,
+    template_folder='../frontend',    # HTML folder (frontend)
+    static_folder='../frontend'       # CSS / JS / Images folder
+)
 
 # Session configuration for user login management
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secure_secret_key_for_sessions')
@@ -481,6 +490,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
