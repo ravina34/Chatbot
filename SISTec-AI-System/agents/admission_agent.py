@@ -1,89 +1,101 @@
-import os
-import requests
 import json
 import logging
 import time
+import requests
+import os
 
-# ===============================================
-# AI CONFIGURATION
-# ===============================================
-# API Key must be set in Render environment variable: GEMINI_API_KEY
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', "")
-# API Endpoint and Model
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
-MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
+# --- Configuration for Gemini API ---
+# Note: In the actual runtime environment, API key handling might be managed 
+# by the Canvas platform, but we set up the structure for clarity.
+# Using a placeholder for the API key and model endpoint.
+API_KEY = os.environ.get('GEMINI_API_KEY', '') # Use empty string if not set
+MODEL_NAME = 'gemini-2.5-flash-preview-09-2025' 
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={API_KEY}"
 
-# System Instruction to define the AI's persona
+# System instruction to define the AI's persona and mandate
 SYSTEM_PROMPT = (
-    "You are the SIStec AI College Assistant. Your primary function is to answer student queries "
-    "about the college, courses, admissions, fees, and general information concisely and professionally. "
-    "Use Google Search for grounding to ensure all facts are up-to-date and reliable. "
-    "If you are asked a question that is clearly outside the scope of college information (e.g., 'What is the meaning of life?'), "
-    "politely state that your function is limited to college-related queries."
+    "You are the friendly, professional, and knowledgeable Admissions and Support Counselor for the Sagar Institute of Science and Technology (SISTEC)."
+    "Your primary goal is to provide accurate, concise, and helpful information related to admissions, courses, campus facilities, and general queries about the institution."
+    "Maintain a respectful and encouraging tone, suitable for prospective or current students."
+    "Always use the available Google Search tool to ensure your information is up-to-date and grounded in external facts, especially for sensitive or time-bound information like fees, dates, or contact details."
+    "Respond in Hindi or English as requested by the user query. If the query is ambiguous, use English."
 )
+
+logging.basicConfig(level=logging.INFO)
 
 def get_ai_response(query_text: str) -> str:
     """
-    Calls the Gemini API to get a response for the student's query.
-    
-    Returns: The generated text response from the AI (may include sources).
-    """
-    if not GEMINI_API_KEY:
-        logging.error("GEMINI_API_KEY is not set. Cannot call AI.")
-        return "AI system is currently unavailable. Please contact the admin."
+    Calls the Gemini API to get a grounded response based on the query.
 
-    # Construct the API payload
+    Args:
+        query_text: The user's query text.
+
+    Returns:
+        The generated text response or a fallback error message.
+    """
+    
+    # 1. Construct the API Payload
     payload = {
         "contents": [{"parts": [{"text": query_text}]}],
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        # Enable Google Search grounding for up-to-date information
+        # Enable Google Search grounding for real-time, accurate information
         "tools": [{"google_search": {}}],
-        "model": MODEL_NAME
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "config": {
+            "maxOutputTokens": 1024,
+            "temperature": 0.2
+        }
     }
 
     headers = {
         'Content-Type': 'application/json'
     }
 
-    # Use exponential backoff for resilience
+    # 2. Implement Exponential Backoff Retry Logic
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            full_url = f"{API_URL}?key={GEMINI_API_KEY}"
-            response = requests.post(full_url, headers=headers, data=json.dumps(payload), timeout=20)
-            response.raise_for_status()
-            
+            # Making the API call
+            response = requests.post(
+                API_URL, 
+                headers=headers, 
+                data=json.dumps(payload), 
+                timeout=20 # Set a reasonable timeout
+            )
+            response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+
             result = response.json()
-            
-            # --- Text Extraction ---
-            text_part = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0]
-            text = text_part.get('text', 'No response found.')
-            
-            # --- Citation Extraction ---
-            sources = []
-            grounding_metadata = result.get('candidates', [{}])[0].get('groundingMetadata')
-            if grounding_metadata and grounding_metadata.get('groundingAttributions'):
-                sources = grounding_metadata['groundingAttributions']
-                
-            if sources:
-                source_links = "\n\n--- Sources ---\n" + "\n".join([
-                    f"[{s.get('web', {}).get('title', 'Source Link')}]({s.get('web', {}).get('uri', '#')})" 
-                    for s in sources if s.get('web', {}).get('uri')
-                ])
-                # Add Markdown line breaks for clean display
-                return text.replace('\n', '<br>') + source_links.replace('\n', '<br>')
+            candidate = result.get('candidates', [{}])[0]
 
-            return text.replace('\n', '<br>')
+            # Extract generated text
+            if candidate and candidate.get('content') and candidate['content'].get('parts'):
+                generated_text = candidate['content']['parts'][0].get('text', '').strip()
+                if generated_text:
+                    # Successfully generated text
+                    return generated_text
+            
+            # If the response was successful but contained no content (e.g., blocked)
+            logging.warning(f"AI response was empty or malformed: {result}")
+            return "Sorry, I received an empty or malformed response from the AI. The query has been marked for Admin review."
 
-        except requests.exceptions.Timeout:
-            logging.warning(f"AI API Call timed out on attempt {attempt + 1}")
         except requests.exceptions.RequestException as e:
-            logging.error(f"AI API Call failed on attempt {attempt + 1}: {e}")
+            logging.error(f"Attempt {attempt + 1}: Gemini API request failed: {e}")
+            if attempt < max_retries - 1:
+                # Calculate delay using exponential backoff (1s, 2s, 4s)
+                wait_time = 2 ** attempt
+                time.sleep(wait_time)
+            else:
+                # Final attempt failed
+                logging.error("All Gemini API attempts failed.")
+                return "AI system is currently unavailable or timed out. Please try again later or wait for Admin assistance."
         except Exception as e:
-            logging.error(f"Error processing AI response on attempt {attempt + 1}: {e}")
-        
-        # Exponential backoff delay
-        if attempt < max_retries - 1:
-            time.sleep(2 ** attempt)
+            logging.error(f"Unexpected error processing AI response: {e}")
+            return "Sorry, an internal error occurred while fetching the AI response."
 
-    return "Sorry, I am currently unable to fetch an answer from the AI. Please try again later or contact the admin."
+    return "Sorry, I am currently unable to fetch an answer for this query."
+
+# Example usage (for testing purposes, not run in Flask)
+# if __name__ == '__main__':
+#     test_query = "When are the admissions for CSE starting this year?"
+#     print(f"Query: {test_query}")
+#     response = get_ai_response(test_query)
+#     print(f"Response: {response}")
