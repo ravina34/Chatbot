@@ -9,40 +9,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import timedelta
 
 # ============================
-# FIX: Add BASE DIR for agents/
+# Setup and Configuration
 # ============================
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-# AI import (keep your agents folder outside backend)
-# NOTE: Using 'get_ai_response' instead of 'get_ai_response' for consistency with previous file
-from agents.admission_agent import get_ai_response 
+# AI import
+from agents.admission_agent import get_ai_response
 
-# ==============================
-# Flask App Configuration
-# ==============================
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, 'frontend'),    # absolute path to frontend
     static_folder=os.path.join(BASE_DIR, 'frontend')        # absolute path to static assets
 )
 
-# Session configuration for user login management
 app.secret_key = os.environ.get('SECRET_KEY', 'your_secure_secret_key_for_sessions')
 app.permanent_session_lifetime = timedelta(hours=24)
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Database Connection (from environment variable)
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     logging.error("DATABASE_URL environment variable is not set.")
 
 
 # ===============================================
-# 2. DATABASE UTILITIES & INITIALIZATION
+# 2. DATABASE UTILITIES & INITIALIZATION (ADAPTED TO NEW SCHEMA LOGIC)
 # ===============================================
 
 def get_db_connection():
@@ -57,7 +50,12 @@ def get_db_connection():
         return None
 
 def db_initialize():
-    """Ensures necessary tables and a default admin user exist."""
+    """
+    Ensures necessary tables and a default admin user exist.
+    Uses 'user_id' as PK for users and 'id' as PK for chat_history,
+    aligning with the provided SQL structure while simplifying chat history
+    into one table for Flask management.
+    """
     conn = get_db_connection()
     if conn is None:
         return
@@ -65,43 +63,49 @@ def db_initialize():
     try:
         cursor = conn.cursor()
         
-        # 1. Users Table (FIX: Standardize on 'id' as primary key)
+        # 1. Users Table (Using user_id as PK, adding password_hash for security)
+        # We drop existing tables to prevent conflicts from prior schema attempts.
+        logging.info("Dropping and recreating database tables...")
+        cursor.execute("DROP TABLE IF EXISTS chat_history CASCADE;")
+        cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
+        
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY, -- Standardized primary key column
+            CREATE TABLE users (
+                user_id SERIAL PRIMARY KEY,
                 full_name VARCHAR(100) NOT NULL,
                 mobile_number VARCHAR(15),
                 email VARCHAR(100) UNIQUE NOT NULL,
                 residential_address TEXT,
-                password_hash TEXT NOT NULL, -- Use only hashed password
+                password_hash TEXT NOT NULL, -- Securely hashed password
                 user_role VARCHAR(10) NOT NULL DEFAULT 'student',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         """)
         
-        # 2. Chat History Table (Reference 'users.id')
+        # 2. Chat History Table (Re-combining queries and responses for simplicity)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_history (
+            CREATE TABLE chat_history (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- Reference users(id)
+                user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
                 query_text TEXT NOT NULL,
-                query_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 response_text TEXT,
-                response_time TIMESTAMP WITH TIME ZONE,
-                query_status VARCHAR(20) NOT NULL DEFAULT 'co',
-                is_admin_response BOOLEAN DEFAULT FALSE
+                query_status VARCHAR(20) NOT NULL DEFAULT 'co', -- 'co' (Checking by AI), 'pending', 'answered'
+                is_admin_response BOOLEAN DEFAULT FALSE,
+                query_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                response_time TIMESTAMP WITH TIME ZONE
             );
         """)
-
+        
         # 3. Insert default Admin user if none exists
-        ADMIN_EMAIL = 'admin@sistec.com'
+        ADMIN_EMAIL = 'admin@sistec.com' # Changed from admin@gmail.com for better context
         ADMIN_PASSWORD_HASH = generate_password_hash('admin')
         
-        # Check for admin user using the standardized 'id' column (if it exists) or just email
-        # We now check using 'id' as the table should have been created with 'id'
-        cursor.execute("SELECT id FROM users WHERE email = %s AND user_role = 'admin';", (ADMIN_EMAIL,))
+        # Check by email and role (after recreation, this will always insert)
+        cursor.execute(
+            "SELECT user_id FROM users WHERE email = %s AND user_role = 'admin';", 
+            (ADMIN_EMAIL,)
+        )
         if cursor.fetchone() is None:
-            # insert using password_hash column
             cursor.execute(
                 "INSERT INTO users (full_name, email, password_hash, user_role) VALUES (%s, %s, %s, %s);",
                 ('System Admin', ADMIN_EMAIL, ADMIN_PASSWORD_HASH, 'admin')
@@ -112,7 +116,8 @@ def db_initialize():
         logging.info("Database tables and Admin check completed.")
     except Exception as e:
         logging.error(f"Error initializing database: {e}")
-        conn.rollback()
+        # Note: If this rollback happens, the tables were likely not created correctly.
+        conn.rollback() 
     finally:
         if conn:
             conn.close()
@@ -122,14 +127,13 @@ db_initialize()
 
 
 # ===============================================
-# 3. DECORATORS AND AUTHENTICATION ROUTES
+# 3. DECORATORS AND AUTHENTICATION ROUTES (UPDATED FOR user_id PK)
 # ===============================================
 
 def login_required(f):
     """Decorator to check if student user is logged in."""
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'student':
-            # FIX: Use correct route name for student login (student_login)
             return redirect(url_for('student_login'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
@@ -139,7 +143,6 @@ def admin_required(f):
     """Decorator to check if user is logged in as admin."""
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'admin':
-            # FIX: Use correct route name for admin login (admin_login_page)
             return redirect(url_for('admin_login_page'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
@@ -160,7 +163,6 @@ def register():
             return jsonify({'message': 'Registration failed due to server error (DB).'}), 500
 
         try:
-            # Added KeyError check for 400 Bad Request prevention
             full_name = request.form['full_name']
             mobile_number = request.form.get('mobile_number', '')
             email = request.form['email']
@@ -170,12 +172,12 @@ def register():
             password_hash = generate_password_hash(password)
             cursor = conn.cursor()
             
-            # FIX: Use RETURNING id to get the new ID directly and simplify the code
+            # Use user_id column
             cursor.execute(
-                "INSERT INTO users (full_name, mobile_number, email, residential_address, password_hash, user_role) VALUES (%s, %s, %s, %s, %s, 'student') RETURNING id;",
+                "INSERT INTO users (full_name, mobile_number, email, residential_address, password_hash, user_role) VALUES (%s, %s, %s, %s, %s, 'student') RETURNING user_id;",
                 (full_name, mobile_number, email, residential_address, password_hash)
             )
-            user_id = cursor.fetchone()[0] # Directly get the ID
+            user_id = cursor.fetchone()[0]
             conn.commit()
             
             # Auto-login
@@ -186,10 +188,6 @@ def register():
             
             return jsonify({'message': 'Registration successful.', 'redirect_url': url_for('student_dashboard')}), 200
             
-        except KeyError as e:
-            # Catching missing required form fields (Fix for 400 Bad Request)
-            logging.error(f"Registration error: Missing form field {e}")
-            return jsonify({'message': f'Missing required form field: {e}.'}), 400
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
             return jsonify({'message': 'Email already registered.'}), 409
@@ -212,22 +210,19 @@ def student_login():
         if conn is None:
             return jsonify({'message': 'Login failed due to server error.'}), 500
         
-        try:
-            email = request.form['email']
-            password = request.form['password']
-        except KeyError as e:
-            return jsonify({'message': f'Missing required form field: {e}.'}), 400
+        email = request.form['email']
+        password = request.form['password']
         
         try:
-            # Use standard cursor as we select by index (0, 1, 2)
+            # Select user_id and password_hash
             cursor = conn.cursor()
-            # FIX: Simple query, select 'id' directly and 'password_hash'
             cursor.execute(
-                "SELECT id, full_name, password_hash FROM users WHERE email = %s AND user_role = 'student';",
+                "SELECT user_id, full_name, password_hash FROM users WHERE email = %s AND user_role = 'student';",
                 (email,)
             )
             user = cursor.fetchone()
             
+            # user[0] = user_id, user[1] = full_name, user[2] = password_hash
             if user and check_password_hash(user[2], password):
                 session.permanent = True
                 session['user_id'] = user[0]
@@ -259,22 +254,19 @@ def admin_login_page():
         if conn is None:
             return jsonify({'message': 'Login failed due to server error.'}), 500
         
-        try:
-            email = request.form['email']
-            password = request.form['password']
-        except KeyError as e:
-            return jsonify({'message': f'Missing required form field: {e}.'}), 400
+        email = request.form['email']
+        password = request.form['password']
         
         try:
-            # Use standard cursor as we select by index (0, 1, 2)
+            # Select user_id and password_hash
             cursor = conn.cursor()
-            # FIX: Simple query, select 'id' directly and 'password_hash'
             cursor.execute(
-                "SELECT id, full_name, password_hash FROM users WHERE email = %s AND user_role = 'admin';",
+                "SELECT user_id, full_name, password_hash FROM users WHERE email = %s AND user_role = 'admin';",
                 (email,)
             )
             user = cursor.fetchone()
             
+            # user[0] = user_id, user[1] = full_name, user[2] = password_hash
             if user and check_password_hash(user[2], password):
                 session.permanent = True
                 session['user_id'] = user[0]
@@ -344,6 +336,7 @@ def chat_api():
         cursor = conn.cursor()
         
         # 1. Save the user query to DB with status 'co' (Checking by AI)
+        # Table is now chat_history, PK is id
         cursor.execute(
             "INSERT INTO chat_history (user_id, query_text, query_status) VALUES (%s, %s, %s) RETURNING id;",
             (user_id, query_text, 'co')
@@ -440,12 +433,12 @@ def get_pending_queries():
         
     try:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        # FIX: Join using the standardized 'id' column from users table
+        # Joining chat_history (ch) on users (u) using ch.user_id = u.user_id
         cursor.execute(
             """
-            SELECT ch.id, ch.query_text, ch.query_time, u.full_name as student_name, u.email as student_email, u.id as student_id
+            SELECT ch.id, ch.query_text, ch.query_time, u.full_name as student_name, u.email as student_email, u.user_id as student_id
             FROM chat_history ch
-            JOIN users u ON ch.user_id = u.id -- u.id is the primary key now
+            JOIN users u ON ch.user_id = u.user_id 
             WHERE ch.query_status = 'pending'
             ORDER BY ch.query_time ASC;
             """
