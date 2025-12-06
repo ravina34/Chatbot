@@ -1,166 +1,145 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SISTec AI Chat - {{ full_name }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
-      rel="stylesheet"
-    />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI College Enquiry Chatbot</title>
     <style>
-      body {
-        font-family: "Inter", sans-serif;
-        background-color: #f3f4f6;
-      }
-      .chat-area-main {
-        height: 70vh; /* Set height relative to viewport */
-        overflow-y: auto;
-      }
-      /* Custom scrollbar for aesthetics */
-      .chat-area-main::-webkit-scrollbar {
-        width: 8px;
-      }
-      .chat-area-main::-webkit-scrollbar-thumb {
-        background: #9ca3af;
-        border-radius: 10px;
-      }
-      .chat-area-main::-webkit-scrollbar-track {
-        background: #e5e7eb;
-      }
-    </style>
-  </head>
-  <body class="min-h-screen flex flex-col">
-    <!-- TOP NAVBAR -->
-    <div
-      class="topbar bg-blue-900 text-white p-4 text-xl font-semibold shadow-md flex justify-between items-center sticky top-0 z-10"
-    >
-      <span class="text-white font-bold">🤖 SISTec AI College Assistant</span>
-      <div class="flex items-center space-x-4">
-        <span class="text-sm font-medium">Welcome, {{ full_name }} 👋</span>
-        <a
-          href="{{ url_for('logout') }}"
-          class="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150 font-medium shadow-md"
-        >
-          Logout
-        </a>
-      </div>
-    </div>
-
-    <!-- MAIN CHAT INTERFACE -->
-    <div class="flex-grow p-6 flex justify-center items-start">
-      <div class="w-full max-w-4xl flex flex-col space-y-6">
-        {% set unanswered_count = 0 %} {% for q in queries %} {% if q[3] !=
-        'answered' %} {% set unanswered_count = unanswered_count + 1 %} {% endif
-        %} {% endfor %}
-
-        <!-- Main Chat Card: History and Input -->
-        <div
-          class="bg-white rounded-xl shadow-2xl border border-gray-100 flex flex-col"
-        >
-          <!-- Chat History Area -->
-          <div class="flex-grow chat-area-main p-6 space-y-6">
-            <!-- Initial Bot Welcome Message -->
-            <div class="bot-message flex justify-start">
-              <div
-                class="bg-blue-50 p-4 rounded-b-xl rounded-tr-xl max-w-md text-sm text-gray-700 shadow-md"
-              >
-                Hi {{ full_name }}! I am the SISTec AI College Assistant. You
-                can ask me any question about admissions, academics, fees, or
-                campus life. Your questions will be answered by our
-                administrative team shortly.
-              </div>
-            </div>
-
-            {% for query in queries|reverse %}
-            <!-- Display newest messages at the bottom -->
-            <!-- User Query -->
-            <div class="user-message flex justify-end">
-              <div
-                class="bg-blue-600 text-white p-4 rounded-b-xl rounded-tl-xl max-w-md text-sm shadow-md"
-              >
-                {{ query[1] }}
-              </div>
-            </div>
-
-            <!-- Bot Response (if available) -->
-            {# Check if the status (index 3) is 'answered' #} {% if query|length
-            > 3 and query[3] == 'answered' %}
-            <div class="bot-message flex justify-start">
-              <div
-                class="bg-gray-100 p-4 rounded-b-xl rounded-tr-xl max-w-md text-sm text-gray-800 shadow-md"
-              >
-                🤖 **Answer:** {{ query[2] }}
-              </div>
-            </div>
-            {# Fallback check for older data where response_text exists but
-            status might be missing/incorrect #} {% elif query[2] %}
-            <div class="bot-message flex justify-start">
-              <div
-                class="bg-gray-100 p-4 rounded-b-xl rounded-tr-xl max-w-md text-sm text-gray-800 shadow-md"
-              >
-                🤖 **Answer:** {{ query[2] }}
-              </div>
-            </div>
-            {% else %}
-            <!-- Pending Message -->
-            <div class="bot-message flex justify-start">
-              <div
-                class="bg-yellow-100 p-4 rounded-b-xl rounded-tr-xl max-w-md text-sm text-yellow-800 shadow-md animate-pulse"
-              >
-                ⏳ **Pending:** Your question is with the admin team and will be
-                answered soon!
-              </div>
-            </div>
-            {% endif %} {% endfor %}
-          </div>
-
-          <!-- Input Form Area -->
-          <form
-            method="POST"
-            action="{{ url_for('user_chat_page') }}"
-            class="p-4 border-t border-gray-200 flex space-x-3"
-          >
-            <input
-              type="text"
-              name="query_text"
-              placeholder="Type your question here..."
-              required
-              autofocus
-              class="flex-grow p-3 border border-gray-300 rounded-full focus:ring-blue-500 focus:border-blue-500 transition duration-150"
-            />
-            <button
-              type="submit"
-              class="px-6 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-700 transition duration-200 shadow-lg flex items-center space-x-2"
-            >
-              <span>Send</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="w-5 h-5"
-              >
-                <path
-                  d="M3.105 2.289a.75.75 0 0 0-.826.804l.399 9.429a.75.75 0 0 0 .826.805L19.9 11.233a.75.75 0 0 0 0-1.46L3.475 2.289Z"
-                />
-              </svg>
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-    <!-- Scroll to bottom after page load -->
-    <script>
-      window.onload = function () {
-        const chatArea = document.querySelector(".chat-area-main");
-        if (chatArea) {
-          // small delay to ensure DOM rendered
-          setTimeout(() => {
-            chatArea.scrollTop = chatArea.scrollHeight;
-          }, 50);
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
         }
-      };
-    </script>
-  </body>
+        .chat-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            min-height: 85vh;
+        }
+        .header {
+            padding: 15px 20px;
+            background-color: #0056b3; /* A professional blue */
+            color: white;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            font-size: 1.5em;
+            font-weight: bold;
+            text-align: center;
+        }
+        .chat-history {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse; /* Show latest messages at the bottom */
+        }
+        .message-box {
+            margin-bottom: 15px;
+            max-width: 90%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-color: #e1ffc7; /* Light green for user */
+            align-self: flex-end;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        .ai-message {
+            background-color: #ffffff; /* White with subtle border for AI */
+            border: 1px solid #ddd;
+            align-self: flex-start;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+        .message-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            display: block;
+        }
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            background-color: #f0f0f0;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+        .input-area textarea {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            resize: none;
+            margin-right: 10px;
+            font-size: 1em;
+            height: 40px;
+        }
+        .input-area button {
+            background-color: #0056b3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+        .input-area button:hover {
+            background-color: #004494;
+        }
+        .logout-link {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #0056b3;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <a href="{{ url_for('logout') }}" class="logout-link">Logout</a>
+
+    <div class="chat-container">
+        <div class="header">College Enquiry AI Chatbot</div>
+        
+        <div class="chat-history">
+            <!-- Messages will be rendered here (latest first due to flex-direction: column-reverse) -->
+            {% for item in chat_history %}
+                <div class="message-box ai-message">
+                    <span class="message-label">AI Response:</span>
+                    {{ item.response | safe }}
+                </div>
+                <div class="message-box user-message">
+                    <span class="message-label">You Asked:</span>
+                    {{ item.query }}
+                </div>
+            {% endfor %}
+
+            <!-- Initial message if history is empty -->
+            {% if not chat_history %}
+                <div class="message-box ai-message" style="margin-top: auto;">
+                    <span class="message-label">AI Chatbot:</span>
+                    Hello! I am your College Enquiry Assistant, powered by Gemini. How can I help you with your college or course questions today?
+                </div>
+            {% endif %}
+
+        </div>
+
+        <form method="POST" action="{{ url_for('ai_chat') }}" class="input-area">
+            <textarea name="user_query" placeholder="Ask your college-related question..." required></textarea>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+</body>
 </html>
