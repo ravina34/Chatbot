@@ -6,8 +6,8 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, text
 
-# Import the Google GenAI SDK
-from google import genai
+# FIX: Import the Google GenAI SDK using the full, stable package name
+import google.generativeai as genai
 from google.genai.errors import APIError
 
 # --- CONFIGURATION AND INITIALIZATION ---
@@ -81,7 +81,8 @@ def get_gemini_client():
     """Initializes and returns the Gemini client."""
     # The SDK automatically reads the GEMINI_API_KEY environment variable.
     try:
-        client = genai.Client()
+        # Use the client interface from the imported genai alias
+        client = genai.Client() 
         return client
     except Exception as e:
         logging.error(f"Failed to initialize Gemini Client: {e}")
