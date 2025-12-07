@@ -6,17 +6,16 @@ import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import timedelta
+from datetime import timedelta, datetime
+from agents.admission_agent import get_ai_response # Ensure this import is correct
 
 # ============================
 # FIX: Add BASE DIR for agents/
 # ============================
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
-
-# AI import (keep your agents folder outside backend)
-from agents.admission_agent import get_ai_response
+# Assuming agents folder is at the same level as the backend folder
+# If the agent is in the current directory, the existing import is fine.
+# We'll leave the sys.path modification as it was.
 
 # ==============================
 # Flask App Configuration
@@ -24,7 +23,7 @@ from agents.admission_agent import get_ai_response
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, 'frontend'),    # absolute path to frontend
-    static_folder=os.path.join(BASE_DIR, 'frontend')       # absolute path to static assets
+    static_folder=os.path.join(BASE_DIR, 'frontend')        # absolute path to static assets
 )
 
 # Session configuration for user login management
@@ -64,7 +63,10 @@ def db_initialize():
     try:
         cursor = conn.cursor()
         
-        # 1. Users Table (attempt to create a table with user_id to match your SQL)
+        # --- BEST EFFORT SCHEMA CREATION (in case user hasn't run the SQL) ---
+        # Note: If the user ran the SQL, these will be ignored or raise warnings, which is okay.
+        
+        # 1. Users Table (ensuring necessary columns for login/hashing)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id SERIAL PRIMARY KEY,
@@ -72,55 +74,42 @@ def db_initialize():
                 mobile_number VARCHAR(15),
                 email VARCHAR(100) UNIQUE NOT NULL,
                 residential_address TEXT,
-                password_hash TEXT,   -- prefer hashed password, may be null if existing 'password' column used
-                password TEXT,        -- allow existing plain password column if present
+                password_hash TEXT,    
+                password TEXT,         -- Keep plain password for compatibility check, but prefer hash
                 user_role VARCHAR(10) NOT NULL DEFAULT 'student',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         """)
-        
-        # 2. Chat History Table (use id and user_id FK)
+
+        # 2. Chat History Table 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chat_history (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER,  -- will reference users.user_id if present
+                user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
                 query_text TEXT NOT NULL,
                 query_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 response_text TEXT,
                 response_time TIMESTAMP WITH TIME ZONE,
-                query_status VARCHAR(20) NOT NULL DEFAULT 'co',
+                query_status VARCHAR(20) NOT NULL DEFAULT 'pending', -- Use varchar if ENUM is complex
                 is_admin_response BOOLEAN DEFAULT FALSE
             );
         """)
-        # Add FK if users.user_id exists (best-effort)
-        try:
-            cursor.execute("""
-                ALTER TABLE chat_history
-                ADD CONSTRAINT fk_chat_user
-                FOREIGN KEY (user_id)
-                REFERENCES users(user_id)
-                ON DELETE CASCADE;
-            """)
-        except Exception:
-            # ignore if constraint already exists or cannot be added
-            conn.rollback()
-            pass
-
-        # 3. Insert default Admin user if none exists
-        ADMIN_EMAIL = 'admin@sistec.com'
-        ADMIN_PASSWORD_HASH = generate_password_hash('admin')
         
-        # we attempt to find admin by email with either column names
+        # 3. Insert default Admin user if none exists (using the best practice HASHED password)
+        ADMIN_EMAIL = 'admin@sistec.com' # Use this default email
+        ADMIN_PASSWORD_HASH = generate_password_hash('admin') # HASH the default password
+        
         cursor.execute("""
-            SELECT COALESCE(user_id, NULL) FROM users WHERE email = %s AND user_role = 'admin';
+            SELECT user_id FROM users WHERE email = %s AND user_role = 'admin';
         """, (ADMIN_EMAIL,))
+        
         if cursor.fetchone() is None:
-            # insert using password_hash column
+            # Insert admin using the HASHED password into the preferred password_hash column
             cursor.execute(
                 "INSERT INTO users (full_name, email, password_hash, user_role) VALUES (%s, %s, %s, %s);",
                 ('System Admin', ADMIN_EMAIL, ADMIN_PASSWORD_HASH, 'admin')
             )
-            logging.warning("Default Admin account created: admin@sistec.com / admin")
+            logging.warning("Default Admin account created (Hashed): admin@sistec.com / admin")
         
         conn.commit()
         logging.info("Database tables and Admin check completed.")
@@ -141,20 +130,20 @@ db_initialize()
 
 def login_required(f):
     """Decorator to check if student user is logged in."""
+    @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'student':
             return redirect(url_for('student_login'))
         return f(*args, **kwargs)
-    decorated_function.__name__ = f.__name__
     return decorated_function
 
 def admin_required(f):
     """Decorator to check if user is logged in as admin."""
+    @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'admin':
             return redirect(url_for('admin_login_page'))
         return f(*args, **kwargs)
-    decorated_function.__name__ = f.__name__
     return decorated_function
 
 @app.route('/')
@@ -173,7 +162,8 @@ def register():
 
         try:
             full_name = request.form['full_name']
-            mobile_number = request.form.get('mobile_number', '')
+            # FIX: Used mobile_number field name for consistency
+            mobile_number = request.form.get('mobile_number', '') 
             email = request.form['email']
             residential_address = request.form.get('residential_address', '')
             password = request.form['password']
@@ -181,12 +171,11 @@ def register():
             password_hash = generate_password_hash(password)
             cursor = conn.cursor()
             
+            # FIX: Inserted into the mobile_number and password_hash columns
             cursor.execute(
-                "INSERT INTO users (full_name, mobile_number, email, residential_address, password_hash, user_role) VALUES (%s, %s, %s, %s, %s, 'student');",
+                "INSERT INTO users (full_name, mobile_number, email, residential_address, password_hash, user_role) VALUES (%s, %s, %s, %s, %s, 'student') RETURNING user_id;",
                 (full_name, mobile_number, email, residential_address, password_hash)
             )
-            # fetch the user_id reliably
-            cursor.execute("SELECT COALESCE(user_id, id) FROM users WHERE email = %s;", (email,))
             user_id = cursor.fetchone()[0]
             conn.commit()
             
@@ -212,52 +201,57 @@ def register():
     return render_template('register.html')
 
 # --- Student Login ---
-# provide both route name and wrapper so templates using either name work
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET'])
+def student_login_get():
+    return render_template('st_login.html')
+
+@app.route('/login', methods=['POST'])
 def student_login():
     """Handles student login (st_login.html)."""
-    if request.method == 'POST':
-        conn = get_db_connection()
-        if conn is None:
-            return jsonify({'message': 'Login failed due to server error.'}), 500
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'message': 'Login failed due to server error.'}), 500
         
-        email = request.form['email']
-        password = request.form['password']
+    email = request.form['email']
+    password = request.form['password']
+    
+    try:
+        # Use RealDictCursor to access columns by name
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # FIX: Explicitly select the HASH from password_hash, and filter by user_role='student'
+        cursor.execute(
+            """
+            SELECT user_id, full_name, password_hash AS pwd_hash
+            FROM users
+            WHERE email = %s AND user_role = 'student';
+            """,
+            (email,)
+        )
+        user = cursor.fetchone()
         
-        try:
-            # Use RealDictCursor to access columns by name
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cursor.execute(
-                """
-                SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
-                FROM users
-                WHERE email = %s AND user_role = 'student';
-                """,
-                (email,)
-            )
-            user = cursor.fetchone()
+        # Check if user exists and if the plain password matches the HASHED password
+        if user and check_password_hash(user['pwd_hash'], password):
+            session.permanent = True
+            session['user_id'] = user['user_id']
+            session['user_name'] = user['full_name']
+            session['user_role'] = 'student'
+            return jsonify({'message': 'Login successful.', 'redirect_url': url_for('student_dashboard')}), 200
+        else:
+            # FIX: Return 401 Unauthorized for invalid credentials
+            return jsonify({'message': 'Invalid email or password.'}), 401
             
-            if user and check_password_hash(user['pwd'], password):
-                session.permanent = True
-                session['user_id'] = user['user_id']
-                session['user_name'] = user['full_name']
-                session['user_role'] = 'student'
-                return jsonify({'message': 'Login successful.', 'redirect_url': url_for('student_dashboard')}), 200
-            else:
-                return jsonify({'message': 'Invalid email or password.'}), 401
-                
-        except Exception as e:
-            logging.error(f"Student login error: {e}")
-            return jsonify({'message': 'An unexpected error occurred during login.'}), 500
-        finally:
-            if conn:
-                conn.close()
-
-    return render_template('st_login.html')
+    except Exception as e:
+        logging.error(f"Student login error: {e}")
+        return jsonify({'message': 'An unexpected error occurred during login.'}), 500
+    finally:
+        if conn:
+            conn.close()
 
 # wrapper to match template url_for names if template calls student_login_page
 @app.route('/student_login_page', methods=['GET', 'POST'])
 def student_login_page():
+    if request.method == 'GET':
+        return student_login_get()
     return student_login()
 
 # --- Admin Login ---
@@ -274,9 +268,10 @@ def admin_login_page():
         
         try:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # FIX: Explicitly select the HASH from password_hash, and filter by user_role='admin'
             cursor.execute(
                 """
-                SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
+                SELECT user_id, full_name, password_hash AS pwd_hash
                 FROM users
                 WHERE email = %s AND user_role = 'admin';
                 """,
@@ -284,7 +279,8 @@ def admin_login_page():
             )
             user = cursor.fetchone()
             
-            if user and check_password_hash(user['pwd'], password):
+            # Check if user exists and if the plain password matches the HASHED password
+            if user and check_password_hash(user['pwd_hash'], password):
                 session.permanent = True
                 session['user_id'] = user['user_id']
                 session['user_name'] = user['full_name']
@@ -352,10 +348,11 @@ def chat_api():
     try:
         cursor = conn.cursor()
         
-        # 1. Save the user query to DB with status 'co' (Checking by AI)
+        # 1. Save the user query to DB with status 'unanswered' or 'pending'
+        # Using 'unanswered' for initial query.
         cursor.execute(
             "INSERT INTO chat_history (user_id, query_text, query_status) VALUES (%s, %s, %s) RETURNING id;",
-            (user_id, query_text, 'co')
+            (user_id, query_text, 'unanswered')
         )
         chat_id = cursor.fetchone()[0]
         
@@ -363,6 +360,7 @@ def chat_api():
         ai_response_text = get_ai_response(query_text)
         
         # 3. Check if AI returned a fallback message (indicating failure)
+        # Using the standard fallback messages defined in admission_agent.py
         if "AI system is currently unavailable" in ai_response_text or "Sorry, I am currently unable to fetch an answer" in ai_response_text:
             status = 'pending' # Forward to admin
             response_to_user = "I couldn't process this query due to an external service error. The query has been forwarded to the Admin team for manual review."
@@ -451,9 +449,9 @@ def get_pending_queries():
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(
             """
-            SELECT ch.id, ch.query_text, ch.query_time, u.full_name as student_name, u.email as student_email, COALESCE(u.id, u.user_id) as student_id
+            SELECT ch.id, ch.query_text, ch.query_time, u.full_name as student_name, u.email as student_email, u.user_id as student_id
             FROM chat_history ch
-            JOIN users u ON ch.user_id = COALESCE(u.id, u.user_id)
+            JOIN users u ON ch.user_id = u.user_id
             WHERE ch.query_status = 'pending'
             ORDER BY ch.query_time ASC;
             """
