@@ -23,19 +23,23 @@ CORS(app)
 
 # Database connection setup
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    # Fix for newer SQLAlchemy versions for compatibility with Render's URL format
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+
+elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 engine = None
 if DATABASE_URL:
     try:
-        engine = create_engine(DATABASE_URL)
-        logging.info("Database engine created successfully.")
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        logging.info("Database engine created successfully using psycopg3.")
     except Exception as e:
         logging.error(f"Error creating database engine: {e}")
 else:
     logging.error("DATABASE_URL environment variable is not set.")
+
 
 def setup_db():
     """Ensures necessary tables exist."""
@@ -300,4 +304,5 @@ def handle_chat():
 if __name__ == '__main__':
     # Use 0.0.0.0 for external visibility in deployment environments like Render
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
 
