@@ -1,8 +1,7 @@
 Flask==2.3.3
 Werkzeug==2.3.7
 gunicorn
-psycopg[binary]==3.3.2
+psycopg2-binary
 SQLAlchemy==1.4.48
 flask-cors==3.0.10
 google-genai==1.53.0
-
