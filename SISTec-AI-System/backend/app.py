@@ -210,6 +210,7 @@ def register():
 def student_login_get():
     return render_template('st_login.html')
 
+
 @app.route('/login', methods=['POST'])
 def student_login():
     """Handles student login (st_login.html)."""
@@ -221,9 +222,7 @@ def student_login():
     password = request.form['password']
     
     try:
-        # Use RealDictCursor to access columns by name
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        # FIX: Explicitly select the HASH from password_hash, and filter by user_role='student'
         cursor.execute(
             """
             SELECT user_id, full_name, password_hash AS pwd_hash
@@ -234,7 +233,6 @@ def student_login():
         )
         user = cursor.fetchone()
         
-        # Check if user exists and if the plain password matches the HASHED password
         if user and check_password_hash(user['pwd_hash'], password):
             session.permanent = True
             session['user_id'] = user['user_id']
@@ -242,7 +240,6 @@ def student_login():
             session['user_role'] = 'student'
             return jsonify({'message': 'Login successful.', 'redirect_url': url_for('student_dashboard')}), 200
         else:
-            # FIX: Return 401 Unauthorized for invalid credentials
             return jsonify({'message': 'Invalid email or password.'}), 401
             
     except Exception as e:
@@ -252,12 +249,11 @@ def student_login():
         if conn:
             conn.close()
 
-# wrapper to match template url_for names if template calls student_login_page
-@app.route('/student_login_page', methods=['GET', 'POST'])
+
+# --- Wrapper for old template links ---
+@app.route('/student_login_page', methods=['GET'])
 def student_login_page():
-    if request.method == 'GET':
-        return student_login_page_get()
-    return student_login_page()
+    return render_template('st_login.html')
 
 # --- Admin Login ---
 @app.route('/admin_login', methods=['GET', 'POST'])
@@ -520,6 +516,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
