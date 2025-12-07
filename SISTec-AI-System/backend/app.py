@@ -7,7 +7,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, text
 
 # FIX: Import the Google GenAI SDK using the full, stable package name
-
 import google.genai as genai
 from google.genai.errors import APIError
 
@@ -24,22 +23,26 @@ CORS(app)
 # Database connection setup
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
-
-elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
-
 engine = None
 if DATABASE_URL:
+    # --- CRITICAL FIX: Ensure the correct PostgreSQL driver is specified ---
+    # Render often provides 'postgres://' or 'postgresql://' which can default to the wrong driver.
+    # We explicitly enforce '+psycopg2' which is installed via requirements.txt (psycopg2-binary).
+    if DATABASE_URL.startswith("postgres://"):
+        # Convert 'postgres://' (standard Render URL) to 'postgresql+psycopg2://'
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif DATABASE_URL.startswith("postgresql://"):
+        # If it was already 'postgresql://' (but missing the driver), fix it too.
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
     try:
-        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-        logging.info("Database engine created successfully using psycopg3.")
+        engine = create_engine(DATABASE_URL)
+        logging.info("Database engine created successfully.")
     except Exception as e:
+        # NOTE: This error should now be fixed by the URL modification above.
         logging.error(f"Error creating database engine: {e}")
 else:
     logging.error("DATABASE_URL environment variable is not set.")
-
 
 def setup_db():
     """Ensures necessary tables exist."""
@@ -304,5 +307,3 @@ def handle_chat():
 if __name__ == '__main__':
     # Use 0.0.0.0 for external visibility in deployment environments like Render
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
-
