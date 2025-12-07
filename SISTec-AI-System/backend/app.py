@@ -205,55 +205,52 @@ def register():
     
     return render_template('register.html')
 
-# --- Student Login ---
-@app.route('/login', methods=['GET'])
-def student_login_get():
-    return render_template('st_login.html')
-
-
-@app.route('/login', methods=['POST'])
+# --- Student Login (GET + POST in one route) ---
+@app.route('/login', methods=['GET', 'POST'])
 def student_login():
-    """Handles student login (st_login.html)."""
+    if request.method == 'GET':
+        # Show login page
+        return render_template('st_login.html')
+
+    # ----- POST Logic (Login Form Submitted) -----
     conn = get_db_connection()
     if conn is None:
         return jsonify({'message': 'Login failed due to server error.'}), 500
-        
-    email = request.form['email']
-    password = request.form['password']
-    
+
+    email = request.form.get('email')
+    password = request.form.get('password')
+
     try:
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT user_id, full_name, password_hash AS pwd_hash
             FROM users
             WHERE email = %s AND user_role = 'student';
-            """,
-            (email,)
-        )
+        """, (email,))
+
         user = cursor.fetchone()
-        
+
         if user and check_password_hash(user['pwd_hash'], password):
             session.permanent = True
             session['user_id'] = user['user_id']
             session['user_name'] = user['full_name']
             session['user_role'] = 'student'
-            return jsonify({'message': 'Login successful.', 'redirect_url': url_for('student_dashboard')}), 200
-        else:
-            return jsonify({'message': 'Invalid email or password.'}), 401
-            
+
+            return jsonify({
+                'message': 'Login successful.',
+                'redirect_url': url_for('student_dashboard')
+            }), 200
+
+        return jsonify({'message': 'Invalid email or password.'}), 401
+
     except Exception as e:
         logging.error(f"Student login error: {e}")
         return jsonify({'message': 'An unexpected error occurred during login.'}), 500
+
     finally:
         if conn:
             conn.close()
 
-
-# --- Wrapper for old template links ---
-@app.route('/student_login_page', methods=['GET'])
-def student_login_page():
-    return render_template('st_login.html')
 
 # --- Admin Login ---
 @app.route('/admin_login', methods=['GET', 'POST'])
@@ -516,6 +513,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
