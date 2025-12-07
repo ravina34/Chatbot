@@ -138,7 +138,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'student':
-            return redirect(url_for('student_login'))
+            return redirect(url_for('student_login_page'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -256,8 +256,8 @@ def student_login():
 @app.route('/student_login_page', methods=['GET', 'POST'])
 def student_login_page():
     if request.method == 'GET':
-        return student_login_get()
-    return student_login()
+        return student_login_page_get()
+    return student_login_page()
 
 # --- Admin Login ---
 @app.route('/admin_login', methods=['GET', 'POST'])
@@ -520,6 +520,7 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
 
 
