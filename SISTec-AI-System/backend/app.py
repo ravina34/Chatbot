@@ -3,7 +3,9 @@ import logging
 from flask import Flask, request, jsonify, session, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+import psycopg2
 from sqlalchemy import create_engine, text
+
 
 # Google Gemini
 import google.genai as genai
@@ -28,10 +30,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 engine = None
 if DATABASE_URL:
+    # Convert Render URL to psycopg2 format
     if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+        DATABASE_URL = DATABASE_URL.replace(
+            "postgres://", 
+            "postgresql+psycopg2://", 
+            1
+        )
 
     try:
         engine = create_engine(DATABASE_URL)
@@ -42,15 +47,15 @@ else:
     logging.error("DATABASE_URL is not set.")
 
 
+
 def setup_db():
-    """Create tables if not present (no commit needed)."""
     if not engine:
         logging.error("Cannot set up DB: Engine is None.")
         return
 
     try:
-        with engine.begin() as connection:
-            connection.execute(text("""
+        with engine.begin() as conn:
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS students (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -61,7 +66,7 @@ def setup_db():
                 );
             """))
 
-            connection.execute(text("""
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS chat_history (
                     id SERIAL PRIMARY KEY,
                     user_id INTEGER REFERENCES students(id),
@@ -71,7 +76,7 @@ def setup_db():
                 );
             """))
 
-        logging.info("Database tables created/verified.")
+        logging.info("Database tables created or verified.")
     except Exception as e:
         logging.error(f"Database setup error: {e}")
 
@@ -275,3 +280,4 @@ def chat():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+
