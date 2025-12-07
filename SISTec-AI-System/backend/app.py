@@ -1,3 +1,5 @@
+from functools import wraps
+
 import sys
 import os
 import json
@@ -518,4 +520,5 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
 
