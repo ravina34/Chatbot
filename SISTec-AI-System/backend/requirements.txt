@@ -4,5 +4,7 @@ gunicorn
 psycopg2-binary
 google-generativeai
 flask-cors
+SQLAlchemy==2.0.20 
+
 
 
