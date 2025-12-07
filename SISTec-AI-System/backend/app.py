@@ -5,7 +5,8 @@ from flask import Flask, request, jsonify, session, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, text
-import psycopg
+import psycopg2
+
 
 
 # FIX: Import the Google GenAI SDK using the full, stable package name
@@ -309,4 +310,5 @@ def handle_chat():
 if __name__ == '__main__':
     # Use 0.0.0.0 for external visibility in deployment environments like Render
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
 
