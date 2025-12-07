@@ -7,23 +7,26 @@ import psycopg2.extras
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import timedelta, datetime
-from agents.admission_agent import get_ai_response # Ensure this import is correct
 
-# ============================
-# FIX: Add BASE DIR for agents/
-# ============================
+# ===========================================
+# FIX: Proper absolute path for agents folder
+# ===========================================
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-# Assuming agents folder is at the same level as the backend folder
-# If the agent is in the current directory, the existing import is fine.
-# We'll leave the sys.path modification as it was.
+AGENTS_DIR = os.path.join(BASE_DIR, "agents")
 
-# ==============================
-# Flask App Configuration
-# ==============================
+# Add agents folder to Python path
+if AGENTS_DIR not in sys.path:
+    sys.path.insert(0, AGENTS_DIR)
+
+from admission_agent import get_ai_response   # ✔ Now works perfectly
+
+# ===========================================
+# Flask App Configuration (frontend outside backend)
+# ===========================================
 app = Flask(
     __name__,
-    template_folder=os.path.join(BASE_DIR, 'frontend'),    # absolute path to frontend
-    static_folder=os.path.join(BASE_DIR, 'frontend')        # absolute path to static assets
+    template_folder=os.path.join(BASE_DIR, 'frontend'),   # absolute path
+    static_folder=os.path.join(BASE_DIR, 'frontend')      # absolute path
 )
 
 # Session configuration for user login management
@@ -515,3 +518,4 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+
