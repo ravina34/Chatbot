@@ -1,247 +1,519 @@
+import sys
 import os
-import logging
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, make_response
-from functools import wraps
-from datetime import datetime
-from agents.admission_agent import get_ai_response
 import json
+import logging
+import psycopg2
+import psycopg2.extras
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import timedelta
 
-# Placeholder for database (replace with actual database integration like SQLAlchemy/MongoDB/Firestore)
-# For this example, we'll use a simple in-memory dictionary.
-# In a real app, NEVER store passwords like this. Use hashing (e.g., bcrypt)!
-users = {}
-admin = {"admin@sistec.edu": "adminpass"}
-queries = {}
-query_counter = 1
+# ============================
+# FIX: Add BASE DIR for agents/
+# ============================
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
-app = Flask(__name__)
-# IMPORTANT: In a production environment, use a complex, random secret key.
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'default_secret_key_very_insecure') 
+# AI import (keep your agents folder outside backend)
+from agents.admission_agent import get_ai_response
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ==============================
+# Flask App Configuration
+# ==============================
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'frontend'),    # absolute path to frontend
+    static_folder=os.path.join(BASE_DIR, 'frontend')       # absolute path to static assets
+)
 
-# --- Utility Functions ---
+# Session configuration for user login management
+app.secret_key = os.environ.get('SECRET_KEY', 'your_secure_secret_key_for_sessions')
+app.permanent_session_lifetime = timedelta(hours=24)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# Database Connection (from environment variable)
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    logging.error("DATABASE_URL environment variable is not set.")
+
+
+# ===============================================
+# 2. DATABASE UTILITIES & INITIALIZATION
+# ===============================================
+
+def get_db_connection():
+    """Connects to the PostgreSQL database."""
+    if not DATABASE_URL:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        logging.error(f"Database connection failed: {e}")
+        return None
+
+def db_initialize():
+    """Ensures necessary tables and a default admin user exist."""
+    conn = get_db_connection()
+    if conn is None:
+        return
+
+    try:
+        cursor = conn.cursor()
+        
+        # 1. Users Table (attempt to create a table with user_id to match your SQL)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id SERIAL PRIMARY KEY,
+                full_name VARCHAR(100) NOT NULL,
+                mobile_number VARCHAR(15),
+                email VARCHAR(100) UNIQUE NOT NULL,
+                residential_address TEXT,
+                password_hash TEXT,   -- prefer hashed password, may be null if existing 'password' column used
+                password TEXT,        -- allow existing plain password column if present
+                user_role VARCHAR(10) NOT NULL DEFAULT 'student',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        # 2. Chat History Table (use id and user_id FK)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,  -- will reference users.user_id if present
+                query_text TEXT NOT NULL,
+                query_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                response_text TEXT,
+                response_time TIMESTAMP WITH TIME ZONE,
+                query_status VARCHAR(20) NOT NULL DEFAULT 'co',
+                is_admin_response BOOLEAN DEFAULT FALSE
+            );
+        """)
+        # Add FK if users.user_id exists (best-effort)
+        try:
+            cursor.execute("""
+                ALTER TABLE chat_history
+                ADD CONSTRAINT fk_chat_user
+                FOREIGN KEY (user_id)
+                REFERENCES users(user_id)
+                ON DELETE CASCADE;
+            """)
+        except Exception:
+            # ignore if constraint already exists or cannot be added
+            conn.rollback()
+            pass
+
+        # 3. Insert default Admin user if none exists
+        ADMIN_EMAIL = 'admin@sistec.com'
+        ADMIN_PASSWORD_HASH = generate_password_hash('admin')
+        
+        # we attempt to find admin by email with either column names
+        cursor.execute("""
+            SELECT COALESCE(user_id, NULL) FROM users WHERE email = %s AND user_role = 'admin';
+        """, (ADMIN_EMAIL,))
+        if cursor.fetchone() is None:
+            # insert using password_hash column
+            cursor.execute(
+                "INSERT INTO users (full_name, email, password_hash, user_role) VALUES (%s, %s, %s, %s);",
+                ('System Admin', ADMIN_EMAIL, ADMIN_PASSWORD_HASH, 'admin')
+            )
+            logging.warning("Default Admin account created: admin@sistec.com / admin")
+        
+        conn.commit()
+        logging.info("Database tables and Admin check completed.")
+    except Exception as e:
+        logging.error(f"Error initializing database: {e}")
+        conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+# Initialize DB when the app starts
+db_initialize()
+
+
+# ===============================================
+# 3. DECORATORS AND AUTHENTICATION ROUTES
+# ===============================================
 
 def login_required(f):
-    """Decorator to require login for certain routes."""
-    @wraps(f)
+    """Decorator to check if student user is logged in."""
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
+        if 'user_id' not in session or session.get('user_role') != 'student':
+            return redirect(url_for('student_login'))
         return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
     return decorated_function
 
 def admin_required(f):
-    """Decorator to require admin login for certain routes."""
-    @wraps(f)
+    """Decorator to check if user is logged in as admin."""
     def decorated_function(*args, **kwargs):
-        if session.get('user_role') != 'admin':
-            return redirect(url_for('admin_login'))
+        if 'user_id' not in session or session.get('user_role') != 'admin':
+            return redirect(url_for('admin_login_page'))
         return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
     return decorated_function
 
-# --- Routes ---
-
 @app.route('/')
-def index():
-    return render_template('index.html')
+def home():
+    """Renders the homepage (home.html)."""
+    return render_template('home.html')
 
-@app.route('/login')
-def login():
-    # If already logged in, redirect to user page
-    if 'user_id' in session and session.get('user_role') == 'user':
-        return redirect(url_for('user_dashboard'))
-    return render_template('login.html')
-
-@app.route('/admin_login')
-def admin_login():
-    # If already logged in as admin, redirect to admin dashboard
-    if 'user_id' in session and session.get('user_role') == 'admin':
-        return redirect(url_for('admin_dashboard'))
-    return render_template('admin_login.html')
-
+# --- Registration ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    """Handles student registration (register.html)."""
     if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        if not email or not password:
-            return jsonify({"message": "Email and password are required."}), 400
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'message': 'Registration failed due to server error (DB).'}), 500
 
-        if email in users:
-            return jsonify({"message": "User already exists. Please login."}), 409
-        
-        # In a real app, hash the password: users[email] = generate_password_hash(password)
-        users[email] = {'password': password, 'id': str(len(users) + 1)}
-        logging.info(f"New user registered: {email}")
-        
-        # Automatically log in the user after successful registration
-        session['user_id'] = users[email]['id']
-        session['user_role'] = 'user'
-        
-        # Successful registration - usually redirects to the dashboard
-        return jsonify({"message": "Registration successful. Redirecting to user dashboard.", "redirect": url_for('user_dashboard')}), 200
-
+        try:
+            full_name = request.form['full_name']
+            mobile_number = request.form.get('mobile_number', '')
+            email = request.form['email']
+            residential_address = request.form.get('residential_address', '')
+            password = request.form['password']
+            
+            password_hash = generate_password_hash(password)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "INSERT INTO users (full_name, mobile_number, email, residential_address, password_hash, user_role) VALUES (%s, %s, %s, %s, %s, 'student');",
+                (full_name, mobile_number, email, residential_address, password_hash)
+            )
+            # fetch the user_id reliably
+            cursor.execute("SELECT COALESCE(user_id, id) FROM users WHERE email = %s;", (email,))
+            user_id = cursor.fetchone()[0]
+            conn.commit()
+            
+            # Auto-login
+            session.permanent = True
+            session['user_id'] = user_id
+            session['user_role'] = 'student'
+            session['user_name'] = full_name
+            
+            return jsonify({'message': 'Registration successful.', 'redirect_url': url_for('student_dashboard')}), 200
+            
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            return jsonify({'message': 'Email already registered.'}), 409
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Registration error: {e}")
+            return jsonify({'message': f'Registration failed: {e}'}), 500
+        finally:
+            if conn:
+                conn.close()
+    
     return render_template('register.html')
 
-# !!! CRITICAL FIX APPLIED HERE !!!
-@app.route('/student_login_page', methods=['POST'])
+# --- Student Login ---
+# provide both route name and wrapper so templates using either name work
+@app.route('/login', methods=['GET', 'POST'])
+def student_login():
+    """Handles student login (st_login.html)."""
+    if request.method == 'POST':
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'message': 'Login failed due to server error.'}), 500
+        
+        email = request.form['email']
+        password = request.form['password']
+        
+        try:
+            # Use RealDictCursor to access columns by name
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
+                FROM users
+                WHERE email = %s AND user_role = 'student';
+                """,
+                (email,)
+            )
+            user = cursor.fetchone()
+            
+            if user and check_password_hash(user['pwd'], password):
+                session.permanent = True
+                session['user_id'] = user['user_id']
+                session['user_name'] = user['full_name']
+                session['user_role'] = 'student'
+                return jsonify({'message': 'Login successful.', 'redirect_url': url_for('student_dashboard')}), 200
+            else:
+                return jsonify({'message': 'Invalid email or password.'}), 401
+                
+        except Exception as e:
+            logging.error(f"Student login error: {e}")
+            return jsonify({'message': 'An unexpected error occurred during login.'}), 500
+        finally:
+            if conn:
+                conn.close()
+
+    return render_template('st_login.html')
+
+# wrapper to match template url_for names if template calls student_login_page
+@app.route('/student_login_page', methods=['GET', 'POST'])
 def student_login_page():
-    email = request.form.get('email')
-    password = request.form.get('password')
+    return student_login()
 
-    user_data = users.get(email)
-
-    if user_data and user_data['password'] == password:
-        session['user_id'] = user_data['id']
-        session['user_role'] = 'user'
-        logging.info(f"User logged in: {email}")
+# --- Admin Login ---
+@app.route('/admin_login', methods=['GET', 'POST'])
+def admin_login_page():
+    """Handles admin login (ad_login.html)."""
+    if request.method == 'POST':
+        conn = get_db_connection()
+        if conn is None:
+            return jsonify({'message': 'Login failed due to server error.'}), 500
         
-        # --- THE FIX: Instead of returning a JSON response, we redirect ---
-        # We return a JSON response with a redirect URL, which frontend JS should handle.
-        # This is often done for AJAX login requests.
-        return jsonify({"message": "Login successful.", "redirect": url_for('user_dashboard')}), 200
-    
-    # If login fails, return 401 Unauthorized with the error message
-    return jsonify({"message": "Invalid email or password."}), 401
-
-@app.route('/admin_login', methods=['POST'])
-def admin_login_post():
-    email = request.form.get('email')
-    password = request.form.get('password')
-    
-    if admin.get(email) == password:
-        session['user_id'] = 'admin'
-        session['user_role'] = 'admin'
-        logging.info("Admin logged in.")
-        return jsonify({"message": "Admin login successful.", "redirect": url_for('admin_dashboard')}), 200
+        email = request.form['email']
+        password = request.form['password']
         
-    return jsonify({"message": "Invalid credentials for admin."}), 401
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                SELECT COALESCE(id, user_id) AS user_id, full_name, COALESCE(password_hash, password) AS pwd
+                FROM users
+                WHERE email = %s AND user_role = 'admin';
+                """,
+                (email,)
+            )
+            user = cursor.fetchone()
+            
+            if user and check_password_hash(user['pwd'], password):
+                session.permanent = True
+                session['user_id'] = user['user_id']
+                session['user_name'] = user['full_name']
+                session['user_role'] = 'admin'
+                return jsonify({'message': 'Admin Login successful.', 'redirect_url': url_for('admin_dashboard')}), 200
+            else:
+                return jsonify({'message': 'Invalid email or password.'}), 401
+                
+        except Exception as e:
+            logging.error(f"Admin login error: {e}")
+            return jsonify({'message': 'An unexpected error occurred during admin login.'}), 500
+        finally:
+            if conn:
+                conn.close()
+                
+    return render_template('ad_login.html')
+
+@app.route('/logout')
+def logout():
+    """Logs out the current user."""
+    session.clear()
+    return redirect(url_for('home'))
+
+
+# ===============================================
+# 4. DASHBOARD ROUTES (Views)
+# ===============================================
 
 @app.route('/user')
 @login_required
-def user_dashboard():
-    # Only regular users can access this page
-    if session.get('user_role') != 'user':
-        return redirect(url_for('login'))
-    return render_template('user_dashboard.html', user_id=session['user_id'])
+def student_dashboard():
+    """Renders the student chat dashboard (st_dashboard.html)."""
+    user_id = session.get('user_id')
+    user_name = session.get('user_name', 'Student')
+    return render_template('st_dashboard.html', user_name=user_name, user_id=user_id)
 
 @app.route('/admin_dashboard')
 @admin_required
 def admin_dashboard():
-    # Only admin can access this page
-    if session.get('user_role') != 'admin':
-        return redirect(url_for('admin_login'))
-    return render_template('admin_dashboard.html')
+    """Renders the admin dashboard (ad_dash.html)."""
+    user_name = session.get('user_name', 'Admin')
+    return render_template('ad_dash.html', user_name=user_name)
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('index'))
 
-# --- Chat API for User ---
+# ===============================================
+# 5. STUDENT CHAT API ENDPOINTS
+# ===============================================
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
-def chat_endpoint():
-    global query_counter
-    data = request.json
-    user_query = data.get('query', '').strip()
-    user_id = session['user_id']
+def chat_api():
+    """Handles student query, saves to DB, and gets AI response."""
+    user_id = session.get('user_id')
+    data = request.get_json()
+    query_text = data.get('query')
+    
+    if not query_text:
+        return jsonify({'error': 'Query text is required'}), 400
 
-    if not user_query:
-        return jsonify({"response": "Please enter a question."}), 400
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection error'}), 500
 
-    # 1. First, attempt to get response from the AI agent
+    chat_id = None
     try:
-        ai_response_text = get_ai_response(user_query)
-        is_answered = True
-        response_status = "AI"
+        cursor = conn.cursor()
+        
+        # 1. Save the user query to DB with status 'co' (Checking by AI)
+        cursor.execute(
+            "INSERT INTO chat_history (user_id, query_text, query_status) VALUES (%s, %s, %s) RETURNING id;",
+            (user_id, query_text, 'co')
+        )
+        chat_id = cursor.fetchone()[0]
+        
+        # 2. Get AI Response
+        ai_response_text = get_ai_response(query_text)
+        
+        # 3. Check if AI returned a fallback message (indicating failure)
+        if "AI system is currently unavailable" in ai_response_text or "Sorry, I am currently unable to fetch an answer" in ai_response_text:
+            status = 'pending' # Forward to admin
+            response_to_user = "I couldn't process this query due to an external service error. The query has been forwarded to the Admin team for manual review."
+        else:
+            status = 'answered'
+            response_to_user = ai_response_text
+
+        # 4. Update DB with final status and response
+        cursor.execute(
+            """
+            UPDATE chat_history 
+            SET response_text = %s, response_time = CURRENT_TIMESTAMP, query_status = %s 
+            WHERE id = %s;
+            """,
+            (response_to_user, status, chat_id)
+        )
+        conn.commit()
+
+        # 5. Return the response to the frontend
+        return jsonify({
+            'response': response_to_user,
+            'status': status,
+        }), 200
+
     except Exception as e:
-        logging.error(f"AI response failed for user {user_id}: {e}")
-        ai_response_text = "AI system is currently unavailable. Your query has been logged for Admin review."
-        is_answered = False
-        response_status = "Pending"
+        conn.rollback()
+        logging.error(f"Chat API error: {e}")
+        
+        # Fallback if unhandled error occurs during DB/AI interaction
+        if chat_id:
+            try:
+                # Mark as pending if the insertion succeeded but AI/Update failed
+                cursor.execute(
+                    "UPDATE chat_history SET query_status = 'pending' WHERE id = %s;",
+                    (chat_id,)
+                )
+                conn.commit()
+            except:
+                pass # Ignore if this update fails too
 
-    # 2. Log the query
-    q_id = str(query_counter)
-    queries[q_id] = {
-        'id': q_id,
-        'user_id': user_id,
-        'query': user_query,
-        'answer': ai_response_text,
-        'is_answered': is_answered,
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'status': response_status
-    }
-    query_counter += 1
+        return jsonify({'error': 'An unrecoverable server error occurred.'}), 500
+    finally:
+        if conn:
+            conn.close()
 
-    # If AI failed, mark as pending and return AI's fallback message
-    if not is_answered:
-        return jsonify({"response": ai_response_text, "status": "pending"})
-
-    # If AI succeeded, return the AI response
-    return jsonify({"response": ai_response_text, "status": "answered"})
-
-
-# --- History and Admin APIs ---
 
 @app.route('/api/chat_history', methods=['GET'])
 @login_required
-def chat_history():
-    user_id = session['user_id']
-    # Filter queries for the current user
-    user_history = [q for q in queries.values() if q['user_id'] == user_id]
-    
-    # Sort by timestamp (or ID which acts as sequence)
-    user_history.sort(key=lambda x: x['id'])
-    
-    # Only return essential fields for the user
-    simplified_history = [{'query': h['query'], 'answer': h['answer'], 'status': h['status']} for h in user_history]
-    
-    # Return as JSON
-    return jsonify(simplified_history), 200
+def get_chat_history():
+    """Fetches all chat history for the logged-in student."""
+    user_id = session.get('user_id')
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection error'}), 500
+        
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT id, query_text, query_time, response_text, response_time, query_status, is_admin_response FROM chat_history WHERE user_id = %s ORDER BY query_time ASC;",
+            (user_id,)
+        )
+        history = cursor.fetchall()
+        return jsonify(history), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching chat history: {e}")
+        return jsonify({'error': 'Could not fetch chat history'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ===============================================
+# 6. ADMIN API ENDPOINTS
+# ===============================================
 
 @app.route('/api/admin/pending_queries', methods=['GET'])
 @admin_required
-def pending_queries_api():
-    pending = [q for q in queries.values() if q['status'] == 'Pending']
-    # Return all fields for admin
-    return jsonify(pending), 200
+def get_pending_queries():
+    """Fetches all pending queries for the admin dashboard."""
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection error'}), 500
+        
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            """
+            SELECT ch.id, ch.query_text, ch.query_time, u.full_name as student_name, u.email as student_email, COALESCE(u.id, u.user_id) as student_id
+            FROM chat_history ch
+            JOIN users u ON ch.user_id = COALESCE(u.id, u.user_id)
+            WHERE ch.query_status = 'pending'
+            ORDER BY ch.query_time ASC;
+            """
+        )
+        pending_queries = cursor.fetchall()
+        return jsonify(pending_queries), 200
+
+    except Exception as e:
+        logging.error(f"Error fetching pending queries: {e}")
+        return jsonify({'error': 'Could not fetch pending queries'}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/api/admin/answer_query', methods=['POST'])
 @admin_required
-def answer_query_api():
-    data = request.json
-    query_id = data.get('query_id')
-    admin_answer = data.get('answer', '').strip()
+def admin_answer_query():
+    """Allows admin to answer a pending query."""
+    data = request.get_json()
+    chat_id = data.get('chat_id')
+    admin_response = data.get('response')
 
-    if query_id in queries and admin_answer:
-        queries[query_id]['answer'] = admin_answer
-        queries[query_id]['is_answered'] = True
-        queries[query_id]['status'] = 'Admin Answered'
-        logging.info(f"Query {query_id} answered by admin.")
-        return jsonify({"message": f"Query {query_id} successfully answered."}), 200
-    
-    return jsonify({"message": "Invalid query ID or empty answer."}), 400
+    if not all([chat_id, admin_response]):
+        return jsonify({'error': 'Chat ID and response are required'}), 400
 
-# --- Error Handling ---
+    conn = get_db_connection()
+    if conn is None:
+        return jsonify({'error': 'Database connection error'}), 500
 
-@app.errorhandler(404)
-def page_not_found(e):
-    # note that we set the 404 status explicitly
-    return render_template('404.html'), 404
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE chat_history 
+            SET response_text = %s, response_time = CURRENT_TIMESTAMP, query_status = 'answered', is_admin_response = TRUE
+            WHERE id = %s AND query_status = 'pending';
+            """,
+            (admin_response, chat_id)
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'Query not found or already answered.'}), 404
+            
+        conn.commit()
+        return jsonify({'message': 'Query answered successfully.'}), 200
 
-# Run the app
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Admin answer query error: {e}")
+        return jsonify({'error': 'An unexpected error occurred.'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ===============================================
+# 7. RUN THE APP
+# ===============================================
+
 if __name__ == '__main__':
-    # Add a dummy user for testing
-    if not users:
-        users['test@user.com'] = {'password': 'password123', 'id': 'u1'}
-    # Run on the required port for the environment
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=True)
-
-# Add placeholder HTML files (index.html, login.html, etc.) if they don't exist
-# This is typically done to ensure the app runs without immediate file errors,
-# but since you only provided logs, I'll assume standard Flask structure
-# and focus on the Python logic fix.
+    # Ensure DB is initialized before running the app
+    db_initialize() 
+    app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
