@@ -5,3 +5,4 @@ psycopg[binary]==3.3.2
 SQLAlchemy==1.4.48
 flask-cors==3.0.10
 google-genai==1.53.0
+
