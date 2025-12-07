@@ -20,14 +20,14 @@ AGENTS_DIR = os.path.join(BASE_DIR, "agents")
 if AGENTS_DIR not in sys.path:
     sys.path.insert(0, AGENTS_DIR)
 
-from admission_agent import get_ai_response   # ✔ Now works perfectly
+from admission_agent import get_ai_response    # ✔ Now works perfectly
 
 # ===========================================
 # Flask App Configuration (frontend outside backend)
 # ===========================================
 app = Flask(
     __name__,
-    template_folder=os.path.join(BASE_DIR, 'frontend'),   # absolute path
+    template_folder=os.path.join(BASE_DIR, 'frontend'),    # absolute path
     static_folder=os.path.join(BASE_DIR, 'frontend')      # absolute path
 )
 
@@ -80,7 +80,7 @@ def db_initialize():
                 email VARCHAR(100) UNIQUE NOT NULL,
                 residential_address TEXT,
                 password_hash TEXT,    
-                password TEXT,         -- Keep plain password for compatibility check, but prefer hash
+                password TEXT,        -- Keep plain password for compatibility check, but prefer hash
                 user_role VARCHAR(10) NOT NULL DEFAULT 'student',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
@@ -138,7 +138,8 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('user_role') != 'student':
-            return redirect(url_for('student_login_page'))
+            # FIX: Changed 'student_login_page' to 'student_login'
+            return redirect(url_for('student_login'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -293,7 +294,7 @@ def admin_login_page():
         finally:
             if conn:
                 conn.close()
-                
+            
     return render_template('ad_login.html')
 
 @app.route('/logout')
@@ -513,9 +514,3 @@ if __name__ == '__main__':
     # Ensure DB is initialized before running the app
     db_initialize() 
     app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
-
-
-
-
-
-
